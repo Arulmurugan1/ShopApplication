@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+        mvc:
+            routes:
+                - id : product-service
+                  uri: http://localhost:1000
+                  predicates:
+                    - Path=/api/products/**
+
+                - id : order-service
+                  uri: http://localhost:1005
+                  predicates:
+                    - Path=/api/orders/**
+
+                - id : inventory-service
+                  uri: http://localhost:1025
+                  predicates:
+                    - Path=/api/inventory/**

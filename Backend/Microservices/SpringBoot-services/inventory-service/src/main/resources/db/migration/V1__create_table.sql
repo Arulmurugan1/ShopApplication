@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS inventory (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    skuId VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL,
+    reservedQuantity INT NOT NULL,
+    availableQuantity INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,0 +1,82 @@
+services:
+  product-service-mongodb:
+    image: mongo:7.0.5
+    container_name: product-service-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_DATABASE: product_service_db
+    ports:
+      - "1060:27017"
+    volumes:
+      - ./mongo_data:/data/db
+
+  order-service-mysql:
+    image: mysql:8.0.45
+    restart: always
+    container_name: order-service-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql_root_password
+    ports:
+      - "1010:3306"
+    volumes:
+      - ./mysql_order_data:/var/lib/mysql
+      - ./docker/mysql/init-order-service.sql:/docker-entrypoint-initdb.d/init.sql
+
+  inventory-service-mysql:
+    image: mysql:8.0.45
+    container_name: inventory-service-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql_root_password
+    ports:
+      - "1030:3306"
+    volumes:
+      - ./mysql_inventory_data:/var/lib/mysql
+      - ./docker/mysql/init-inv-service.sql:/docker-entrypoint-initdb.d/init.sql
+
+  keycloak-mysql:
+    image: mysql:8.0.45
+    container_name: keycloak-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: keycloak_db
+      MYSQL_USER: keycloak
+      MYSQL_PASSWORD: keycloak
+    ports:
+      - "1050:3306"
+    volumes:
+      - ./volume-data/mysql-keycloak_data:/var/lib/mysql
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s  # Gives MySQL 30 seconds to breathe and initialize files first
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_DB: mysql
+      KC_DB_URL: jdbc:mysql://keycloak-mysql:3306/keycloak_db?useSSL=false&allowPublicKeyRetrieval=true
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: 'adm!@#$%^&*(_+)n'
+    ports:
+      - "1040:8080"
+    volumes:
+      - ./docker/keycloak/realms/:/opt/keycloak/data/import/
+    networks:
+      - backend-network
+    depends_on:
+      keycloak-mysql:
+        condition: service_healthy
+
+networks:
+  backend-network:
+    driver: bridge

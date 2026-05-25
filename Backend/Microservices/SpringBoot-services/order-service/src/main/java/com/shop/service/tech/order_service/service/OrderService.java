@@ -4,26 +4,27 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.shop.service.tech.order_service.client.feignClient.inevntory.IInventoryClient;
 import com.shop.service.tech.order_service.dao.Order;
 import com.shop.service.tech.order_service.dto.OrderRequest;
 import com.shop.service.tech.order_service.dto.OrderResponse;
+import com.shop.service.tech.order_service.events.OrderPlacedEvent;
 import com.shop.service.tech.order_service.repositoriy.IOrderRepository;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class OrderService implements IOrderService
 {
-    @Autowired
-    private IOrderRepository orderRepository;
-
-    @Autowired
-    private IInventoryClient invCLient;
+    
+    private final IOrderRepository orderRepository;
+    private final IInventoryClient invCLient;
+    private final KafkaProducerService kafkaService;
     
     @Override
     public List<OrderResponse> getAllOrders() 
@@ -75,6 +76,14 @@ public class OrderService implements IOrderService
             orderRequest.customerName(), orderRequest.skuId(), orderRequest.quantity(), orderRequest.price());
         try {
             log.debug("Checking inventory availability for skuId: {} with quantity: {}", orderRequest.skuId(), orderRequest.quantity());
+
+            // try{
+            //     Thread.sleep(5000); // Simulate network latency for inventory check
+            // }catch(InterruptedException e){
+            //     log.warn("Thread sleep interrupted: {}", e.getMessage());
+            //     return null; // Return null or handle as needed
+            // }
+
             boolean isInventoryAvailable = invCLient.checkInventory(orderRequest.skuId(), orderRequest.quantity());
 
             if(!isInventoryAvailable) {
@@ -87,6 +96,24 @@ public class OrderService implements IOrderService
             log.debug("Saving order to repository");
             Order savedOrder = orderRepository.save(newOrder);
             log.info("Order successfully created with id: {}, customer: {}, skuId: {}", savedOrder.getId(), savedOrder.getCustomerName(), savedOrder.getSkuId());
+
+            //send order placed event to kafka topic
+
+            log.info("Creating OrderPlacedEvent for orderId: {}", savedOrder.getId());
+
+            OrderPlacedEvent orderPlacedEvent = new OrderPlacedEvent(
+                savedOrder.getId(),
+                savedOrder.getCustomerName(),
+                savedOrder.getSkuId(),
+                parseDateToString(savedOrder.getOrderDate(), true),
+                savedOrder.getQuantity()
+            );
+
+            kafkaService.send("order-events", orderPlacedEvent);
+            log.info("OrderPlacedEvent sent to Kafka topic 'order-events' for orderId: {}", savedOrder.getId());
+
+            //send order placed event to kafka topic
+
             return mapToOrderResponse(savedOrder);
         } catch (Exception e) {
             log.error("Error occurred in createOrder(skuId={}): {}", orderRequest.skuId(), e.getMessage(), e);
@@ -98,7 +125,9 @@ public class OrderService implements IOrderService
     public List<OrderResponse> createOrder(List<OrderRequest> request) 
     {
         log.info("Entering createOrder() method with batch size: {}", request.size());
+
         try {
+
             log.debug("Converting {} order requests to order objects", request.size());
             List<Order> orders = request.stream()
                     .map(req -> {
@@ -108,6 +137,7 @@ public class OrderService implements IOrderService
                     .toList();
             log.debug("Saving {} orders to repository in batch", orders.size());
             List<Order> savedOrders = orderRepository.saveAll(orders);
+            
             log.debug("Converting saved orders to response objects");
             List<OrderResponse> responses = savedOrders.stream()
                     .map(order -> {
@@ -183,7 +213,7 @@ public class OrderService implements IOrderService
             savedOrder.getCustomerName(),
             savedOrder.getSkuId(),
             savedOrder.getOrderStatus(),
-            parseDateToStrign(savedOrder.getDeliveryDate(), false),
+            parseDateToString(savedOrder.getDeliveryDate(), false),
             savedOrder.getPrice(),
             savedOrder.getQuantity()
         );
@@ -233,7 +263,7 @@ public class OrderService implements IOrderService
         return LocalDateTime.parse(dateStr, formatter);
     }
 
-    private String parseDateToStrign(LocalDateTime date, boolean activeDateNeeded) 
+    private String parseDateToString(LocalDateTime date, boolean activeDateNeeded) 
     {
         if(date == null) return activeDateNeeded ? LocalDateTime.now().toString() : null;
         return date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));

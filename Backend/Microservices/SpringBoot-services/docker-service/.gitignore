@@ -1,0 +1,5 @@
+keycloak-mysql-data/
+mongo_data/
+mysql_inventory_data/
+mysql_order_data/
+volume-data/
